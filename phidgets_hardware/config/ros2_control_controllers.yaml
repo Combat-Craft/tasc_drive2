@@ -13,12 +13,12 @@ diff_drive_controller:
   ros__parameters:
     left_wheel_names:
       - front_left_wheel_joint
-
+      - middle_left_wheel_joint
       - rear_left_wheel_joint
 
     right_wheel_names:
       - front_right_wheel_joint
-     
+      - middle_right_wheel_joint
       - rear_right_wheel_joint
 
     wheel_separation: 0.39

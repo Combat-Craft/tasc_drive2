@@ -89,7 +89,9 @@ private:
     const std::string payload = msg->data;
     all_relays_enabled_ =
       relay_enabled(payload, "front_left_wheel_joint") &&
+      relay_enabled(payload, "middle_left_wheel_joint") &&
       relay_enabled(payload, "rear_left_wheel_joint") &&
+      relay_enabled(payload, "middle_right_wheel_joint") &&
       relay_enabled(payload, "front_right_wheel_joint") &&
       relay_enabled(payload, "rear_right_wheel_joint");
   }

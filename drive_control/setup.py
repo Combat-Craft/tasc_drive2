@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'motor_position_publisher = drive_control.motor_position_publisher:main',
+            'jetson_relay = drive_control.jetson_relay:main',
         ],
     },
 )

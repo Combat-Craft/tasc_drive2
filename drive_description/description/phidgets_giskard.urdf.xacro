@@ -1,12 +1,13 @@
 <?xml version="1.0"?>
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="phidgets_4wheel">
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="phidgets_6wheel">
 
   <xacro:property name="body_length" value="0.9"/>
   <xacro:property name="body_width" value="0.55"/>
   <xacro:property name="body_height" value="0.18"/>
-  <xacro:property name="wheel_radius" value="0.12"/>
+  <xacro:property name="wheel_radius" value="0.0925"/> 
   <xacro:property name="wheel_width" value="0.06"/>
   <xacro:property name="front_x" value="0.28"/>
+  <xacro:property name="middle_x" value="0.0"/>
   <xacro:property name="rear_x" value="-0.28"/>
   <xacro:property name="left_y" value="0.33"/>
   <xacro:property name="right_y" value="-0.33"/>
@@ -32,7 +33,18 @@
     </visual>
   </link>
 
+  <!-- LEFT SIDE WHEELS -->
   <link name="front_left_wheel">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+  
+  <link name="middle_left_wheel">
     <visual>
       <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
       <geometry>
@@ -52,7 +64,18 @@
     </visual>
   </link>
 
+  <!-- RIGHT SIDE WHEELS -->
   <link name="front_right_wheel">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+
+  <link name="middle_right_wheel">
     <visual>
       <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
       <geometry>
@@ -72,10 +95,18 @@
     </visual>
   </link>
 
+  <!-- LEFT SIDE JOINTS -->
   <joint name="front_left_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="front_left_wheel"/>
     <origin xyz="${front_x} ${left_y} ${wheel_z}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <joint name="middle_left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="middle_left_wheel"/>
+    <origin xyz="${middle_x} ${left_y} ${wheel_z}" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 
@@ -86,10 +117,18 @@
     <axis xyz="0 1 0"/>
   </joint>
 
+  <!-- RIGHT SIDE JOINTS -->
   <joint name="front_right_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="front_right_wheel"/>
     <origin xyz="${front_x} ${right_y} ${wheel_z}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <joint name="middle_right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="middle_right_wheel"/>
+    <origin xyz="${middle_x} ${right_y} ${wheel_z}" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 
@@ -111,7 +150,14 @@
       <param name="attachment_retry_period_sec">1.0</param>
     </hardware>
 
+    <!-- LEFT SIDE - ALL 3 WHEELS -->
     <joint name="front_left_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <joint name="middle_left_wheel_joint">
       <command_interface name="velocity"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
@@ -123,7 +169,14 @@
       <state_interface name="velocity"/>
     </joint>
 
+    <!-- RIGHT SIDE - ALL 3 WHEELS -->
     <joint name="front_right_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <joint name="middle_right_wheel_joint">
       <command_interface name="velocity"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
@@ -134,6 +187,7 @@
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
+    
   </ros2_control>
 
 </robot>

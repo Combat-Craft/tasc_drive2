@@ -11,7 +11,7 @@ find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(controller_manager REQUIRED)
 find_package(std_msgs REQUIRED)
-
+find_package(std_srvs REQUIRED)
 include_directories(include)
 
 add_library(phidgets_hardware SHARED
@@ -23,6 +23,7 @@ ament_target_dependencies(phidgets_hardware
   hardware_interface
   pluginlib
   std_msgs
+  std_srvs
 )
 
 add_executable(ps4_teleop src/ps4_teleop.cpp)

@@ -17,7 +17,15 @@ def generate_launch_description():
         output="screen"
     )
 
+    dashboard = Node(
+        package="rover_dashboard",
+        executable="dashboard",
+        name="rover_dashboard",
+        output="screen"
+    )
+
     return LaunchDescription([
         joy,
-        teleop
+        teleop,
+        dashboard
     ])
