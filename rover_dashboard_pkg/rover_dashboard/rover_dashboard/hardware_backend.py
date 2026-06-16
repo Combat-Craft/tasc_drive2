@@ -169,6 +169,27 @@ class HardwareBackendNode(Node):
             self.relay_command_pub.publish(msg)
             return
 
+        if cmd_type == 'turn_on_all':
+            self.kill_active = False  # Clear kill state
+            # Create individual commands for all subsystems
+            for subsystem_name in self.subsystems.keys():
+                enable_command = {
+                    'type': 'set_power',
+                    'target': subsystem_name,
+                    'enable': True,
+                    'timestamp': command.get('timestamp', datetime.now().isoformat()),
+                }
+                relay_msg = String()
+                relay_msg.data = json.dumps(enable_command)
+                self.relay_command_pub.publish(relay_msg)
+                # Update local state
+                self.subsystems[subsystem_name]['enabled'] = True
+                self.subsystems[subsystem_name]['state'] = 'ON'
+                self.subsystems[subsystem_name]['health'] = 'healthy'
+                self.subsystems[subsystem_name]['fault'] = 'None'
+                self.subsystems[subsystem_name]['last_command'] = f'ENABLE ALL @ {now_string()}'
+            self.get_logger().info('Turn On All command executed')
+
         if cmd_type == 'software_kill':
             self.kill_active = True
             kill_command = {
@@ -261,3 +282,4 @@ def main(args=None) -> None:
 
 if __name__ == '__main__':
     main(sys.argv)
+
