@@ -43,7 +43,7 @@ try:
     from .shared_topics import (
         DEFAULT_LIGHTS,
         DEFAULT_MOTORS,
-        TOPIC_GUI_COMMAND,
+        TOPIC_RELAY_COMMAND,
         TOPIC_GUI_HEARTBEAT,
         TOPIC_GUI_TELEMETRY,
     )
@@ -51,7 +51,7 @@ except ImportError:
     from shared_topics import (  # type: ignore
         DEFAULT_LIGHTS,
         DEFAULT_MOTORS,
-        TOPIC_GUI_COMMAND,
+        TOPIC_RELAY_COMMAND,
         TOPIC_GUI_HEARTBEAT,
         TOPIC_GUI_TELEMETRY,
     )
@@ -75,9 +75,13 @@ def format_elapsed(seconds: int) -> str:
 def humanize_joint_name(name: str) -> str:
     mapping = {
         'front_left_wheel_joint': 'Front Left Wheel',
+        'middle_left_wheel_joint': 'Middle Left Wheel',
         'rear_left_wheel_joint': 'Rear Left Wheel',
         'front_right_wheel_joint': 'Front Right Wheel',
+        'middle_right_wheel_joint': 'Middle Right Wheel',
         'rear_right_wheel_joint': 'Rear Right Wheel',
+        'left_headlight': 'Left Headlight',
+        'right_headlight': 'Right Headlight',
     }
     return mapping.get(name, name)
 
@@ -94,7 +98,7 @@ class RosDashboardNode(Node):
         self.bridge = bridge
         self.telemetry_sub = self.create_subscription(String, TOPIC_GUI_TELEMETRY, self._telemetry_cb, 10)
         self.heartbeat_sub = self.create_subscription(String, TOPIC_GUI_HEARTBEAT, self._heartbeat_cb, 10)
-        self.command_pub = self.create_publisher(String, TOPIC_GUI_COMMAND, 10)
+        self.command_pub = self.create_publisher(String, TOPIC_RELAY_COMMAND, 10)
         self.bridge.ros_status_changed.emit('ROS 2 connected')
 
     def _telemetry_cb(self, msg: String) -> None:
@@ -132,7 +136,8 @@ class ComponentState:
     name: str
     display_name: str
     kind: str
-    enabled: bool = False
+    enabled: bool = False  # This is the DISPLAY state (what dashboard shows)
+    real_enabled: bool = False  # This is the REAL relay state
     attached: bool = False
     channel: int = 0
     voltage: float = 0.0
@@ -254,7 +259,8 @@ class TopologyComponentBlock(QFrame):
         root.addLayout(button_row)
 
     def _emit_toggle(self) -> None:
-        self.toggled.emit(self.component_name, not self.state.enabled)
+        # Send the REAL state (opposite of what dashboard shows)
+        self.toggled.emit(self.component_name, not self.state.real_enabled)
 
     def update_state(self, state: ComponentState) -> None:
         self.state = state
@@ -335,10 +341,12 @@ class TopologyGraphView(QFrame):
         positions = {
             'Left Headlight': self._rect(width * 0.03, height * 0.05, width * 0.27, height * 0.24),
             'Right Headlight': self._rect(width * 0.70, height * 0.05, width * 0.27, height * 0.24),
-            'front_left_wheel_joint': self._rect(width * 0.02, height * 0.35, width * 0.32, height * 0.27),
-            'front_right_wheel_joint': self._rect(width * 0.66, height * 0.35, width * 0.32, height * 0.27),
-            'rear_left_wheel_joint': self._rect(width * 0.02, height * 0.67, width * 0.32, height * 0.27),
-            'rear_right_wheel_joint': self._rect(width * 0.66, height * 0.67, width * 0.32, height * 0.27),
+            'front_left_wheel_joint': self._rect(width * 0.02, height * 0.32, width * 0.30, height * 0.20),
+            'middle_left_wheel_joint': self._rect(width * 0.02, height * 0.52, width * 0.30, height * 0.20),
+            'rear_left_wheel_joint': self._rect(width * 0.02, height * 0.72, width * 0.30, height * 0.20),
+            'front_right_wheel_joint': self._rect(width * 0.68, height * 0.32, width * 0.30, height * 0.20),
+            'middle_right_wheel_joint': self._rect(width * 0.68, height * 0.52, width * 0.30, height * 0.20),
+            'rear_right_wheel_joint': self._rect(width * 0.68, height * 0.72, width * 0.30, height * 0.20),
         }
 
         for name, block in self.components.items():
@@ -455,6 +463,7 @@ class DetailPanel(QGroupBox):
 
 class HeaderBar(QFrame):
     kill_requested = Signal()
+    turn_on_all_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -475,12 +484,19 @@ class HeaderBar(QFrame):
         self.ros_badge = StatusBadge('DEMO MODE', 'offline')
         self.heartbeat_label = QLabel('Elapsed: 00:00:00')
         self.mode_badge = StatusBadge('SAFE', 'warning')
+        
+        self.turn_on_all_button = QPushButton('TURN ON ALL')
+        self.turn_on_all_button.setObjectName('turnOnAllButton')
+        self.turn_on_all_button.clicked.connect(self.turn_on_all_requested.emit)
+        
         self.kill_button = QPushButton('SOFTWARE KILL')
         self.kill_button.setObjectName('killButton')
         self.kill_button.clicked.connect(self.kill_requested.emit)
+        
         layout.addWidget(self.ros_badge)
         layout.addWidget(self.heartbeat_label)
         layout.addWidget(self.mode_badge)
+        layout.addWidget(self.turn_on_all_button)
         layout.addWidget(self.kill_button)
 
 
@@ -546,6 +562,11 @@ class DashboardWindow(QMainWindow):
         self.seen_backend_heartbeat = False
         self.current_selected: Optional[str] = None
         self.latest_payload = {}
+        
+        # Auto-connect timer variables
+        self.connect_timer = None
+        self.connect_timeout = None
+        self.connect_attempts = 0
 
         self.component_states: Dict[str, ComponentState] = {
             name: ComponentState(name=name, display_name=humanize_joint_name(name), kind='motor')
@@ -568,6 +589,7 @@ class DashboardWindow(QMainWindow):
 
         self.header = HeaderBar()
         self.header.kill_requested.connect(self.on_kill_requested)
+        self.header.turn_on_all_requested.connect(self.on_turn_on_all_requested) 
         root.addWidget(self.header)
 
         self.summary = SummaryStrip()
@@ -641,6 +663,8 @@ class DashboardWindow(QMainWindow):
             #componentBlock QPushButton { padding: 6px 8px; font-size: 11px; }
             QPushButton#killButton { background: #e74c3c; min-width: 160px; }
             QPushButton#killButton:hover { background: #ff6655; }
+            #turnOnAllButton { background: #1db954; min-width: 160px; }
+            #turnOnAllButton:hover { background: #26c456; }
             QTextEdit {
                 background: #0b1220; border: 1px solid #263241; border-radius: 10px;
             }
@@ -651,6 +675,77 @@ class DashboardWindow(QMainWindow):
             QProgressBar::chunk { background: #1db954; border-radius: 8px; }
             """
         )
+
+    def on_turn_on_all_requested(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            'Confirm Turn On All',
+            'Turn on all motors? This will enable all motor power outputs.',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        
+        self.log_panel.add_entry('TURN ON ALL requested - will keep trying until motors connect...')
+        
+        # Disable button while trying
+        self.header.turn_on_all_button.setEnabled(False)
+        self.header.turn_on_all_button.setText('CONNECTING...')
+        
+        # Create a timer that keeps publishing every 1 second
+        self.connect_attempts = 0
+        self.connect_timer = QTimer(self)
+        self.connect_timer.timeout.connect(self._publish_turn_on_all)
+        self.connect_timer.start(1000)  # Every 1 second
+        
+        # 10 second timeout max attempts
+        self.connect_timeout = QTimer(self)
+        self.connect_timeout.setSingleShot(True)
+        self.connect_timeout.timeout.connect(self._stop_connecting)
+        self.connect_timeout.start(10000)  # 10 seconds max
+
+    def _publish_turn_on_all(self) -> None:
+        """Keep publishing turn_on_all command until motors connect"""
+        self.connect_attempts += 1
+        
+        command = {
+            'type': 'turn_on_all',
+            'timestamp': datetime.now().isoformat(),
+        }
+        
+        if self.ros_node:
+            self.ros_node.send_command(command)
+            self.log_panel.add_entry(f'Published TURN ON ALL (attempt {self.connect_attempts})')
+        
+        # Check if motors are connected via telemetry
+        motors_connected = False
+        for state in self.component_states.values():
+            if state.is_motor and state.attached and state.real_enabled == False:  # relay OFF = motors ON
+                motors_connected = True
+                break
+        
+        if motors_connected or self.connect_attempts >= 10:  # Stop if connected or 10 attempts
+            self._stop_connecting()
+            if motors_connected:
+                self.log_panel.add_entry(f'✅ Motors connected after {self.connect_attempts} attempts!')
+                self.header.mode_badge.set_status('ARMED', 'healthy')
+                self.header.turn_on_all_button.setText('MOTORS ON')
+                self.header.turn_on_all_button.setStyleSheet('background: #1db954; min-width: 160px;')
+            else:
+                self.log_panel.add_entry('❌ Timeout (10s): Motors did not connect. Check hardware.')
+
+    def _stop_connecting(self) -> None:
+        """Stop the connection attempts"""
+        if self.connect_timer:
+            self.connect_timer.stop()
+        if self.connect_timeout:
+            self.connect_timeout.stop()
+        
+        self.header.turn_on_all_button.setEnabled(True)
+        if self.header.turn_on_all_button.text() != 'MOTORS ON':
+            self.header.turn_on_all_button.setText('TURN ON ALL')
+            self.header.turn_on_all_button.setStyleSheet('')
 
     def _setup_ros_or_demo(self) -> None:
         if ROS_AVAILABLE:
@@ -710,7 +805,12 @@ class DashboardWindow(QMainWindow):
                 ),
             )
 
-            state.enabled = bool(relay_data.get('enabled', state.enabled))
+            # Store the REAL relay state
+            real_enabled = bool(relay_data.get('enabled', state.real_enabled))
+            state.real_enabled = real_enabled
+            # DISPLAY is inverted (light ON = show OFF)
+            state.enabled = not real_enabled
+            
             state.channel = int(relay_data.get('channel', state.channel))
             state.voltage = float(relay_data.get('voltage', state.voltage))
             state.current = float(relay_data.get('current', state.current))
@@ -724,16 +824,16 @@ class DashboardWindow(QMainWindow):
                 state.attached = bool(motor_data.get('attached', state.attached))
                 state.last_update = motor_data.get('last_update', state.last_update)
                 state.motor_fault = motor_data.get('fault', 'Motor telemetry unavailable')
-                relay_health = relay_data.get('health', 'offline' if not state.enabled else 'healthy')
+                relay_health = relay_data.get('health', 'offline' if not real_enabled else 'healthy')
                 motor_health = motor_data.get('health', 'offline' if not state.attached else 'healthy')
 
                 if relay_health == 'fault' or motor_health == 'fault':
                     state.health = 'fault'
                 elif relay_health == 'warning' or motor_health == 'warning':
                     state.health = 'warning'
-                elif state.enabled and state.attached:
+                elif real_enabled and state.attached:
                     state.health = 'healthy'
-                elif state.enabled or state.attached:
+                elif real_enabled or state.attached:
                     state.health = 'warning'
                 else:
                     state.health = 'offline'
@@ -744,7 +844,7 @@ class DashboardWindow(QMainWindow):
                 if state.motor_fault not in {'None', 'Motor telemetry unavailable'}:
                     fault_parts.append(state.motor_fault)
                 if not fault_parts:
-                    if not state.enabled:
+                    if not real_enabled:
                         fault_parts.append('Power path is off')
                     elif not state.attached:
                         fault_parts.append('Motor controller not attached')
@@ -755,12 +855,12 @@ class DashboardWindow(QMainWindow):
                 if state.attached:
                     motors_online += 1
             else:
-                state.attached = state.enabled
+                state.attached = real_enabled
                 state.temperature = 0.0
                 state.position = 0.0
                 state.velocity = 0.0
                 state.motor_fault = 'N/A'
-                relay_health = relay_data.get('health', 'offline' if not state.enabled else 'healthy')
+                relay_health = relay_data.get('health', 'offline' if not real_enabled else 'healthy')
                 state.health = relay_health
                 state.fault = relay_data.get('fault', 'Headlight control ready')
 
@@ -782,6 +882,7 @@ class DashboardWindow(QMainWindow):
             self.detail_panel.render_component(self.component_states[self.current_selected])
 
     def on_toggle_component(self, name: str, enable: bool) -> None:
+        # enable here is the REAL state we want (True = turn relay ON = motor ON)
         command = {
             'type': 'set_power',
             'target': name,
@@ -806,21 +907,33 @@ class DashboardWindow(QMainWindow):
         confirm = QMessageBox.question(
             self,
             'Confirm software kill',
-            'Send a software kill command to disable controllable loads?',
+            'Turn off all motors?',
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         if confirm != QMessageBox.Yes:
             return
+        
+        # Motors OFF = Relays ON
         command = {
-            'type': 'software_kill',
+            'type': 'set_power',
             'target': 'all',
-            'enable': False,
+            'enable': True,   # True = relays ON = motors OFF
             'timestamp': datetime.now().isoformat(),
         }
-        self.log_panel.add_entry('SOFTWARE KILL requested by operator.')
+        self.log_panel.add_entry('SOFTWARE KILL - turning motors OFF (relays ON)')
         if self.ros_node:
             self.ros_node.send_command(command)
+        
+        # Update local state
+        for state in self.component_states.values():
+            state.enabled = False
+            state.real_enabled = True
+            state.health = 'offline'
+            state.fault = 'Power path is off'
+            state.last_command = f'MOTORS OFF @ {datetime.now().strftime("%H:%M:%S")}'
+            self.topology.update_component_state(state)
+        
         self.header.mode_badge.set_status('SAFE', 'warning')
 
     def closeEvent(self, event) -> None:
